@@ -1,0 +1,1025 @@
+---
+title: "STAT 2103 Final Project Code"
+output: html_document
+name: 'Kailyn Askins'
+date: '2022-12-17'
+---
+
+```{r}
+
+install.packages("stargazer")
+install.packages("ggpubr")
+library(dplyr)
+library(ggplot2)
+library(stargazer)
+library(ggpubr)
+
+normsdata <- read.csv("normsdata.csv")
+
+#Data Cleaning and Preparation
+
+#removing the responses that did not answer any of the political norms questions
+#from the dataset
+df <- normsdata %>%
+  filter(!is.na(methods) & !is.na(checks) & !is.na(exec_power) &
+         !is.na(institu_respect) & !is.na(vote) & !is.na(political_voice) &
+         !is.na(inherent_unequal) & !is.na(protest))
+
+#creating a consistent scale for the norms items so that 5 indicates the most
+#support for a norm and a 1 indicates the least support
+df <- df %>%
+  mutate(methods = 6 - methods,
+         exec_power = 6 - exec_power,
+         inherent_unequal = 6 - inherent_unequal,
+         protest = 6 - protest)
+
+#creating the aggregated measure of affective polarization
+
+#creating the measure of outgroup bias
+df <- df %>% 
+  #reversing these measures so that a 5 corresponds to the most positive view of
+  #the group and a 1 corresponds to the most negative view
+  mutate(reversehypout = 6 - hypocritical_outgroup,
+         reverseselfout = 6 - selfish_outgroup,
+         reversemeanout = 6 - mean_outgroup,
+         reversemarout = 5 - marry_outgroup)
+
+df <- df %>%
+  #standardizing the outgroup feeling scores to be on a 0 to 1 scale  
+  mutate(feelingtherm_outgroup = feelingtherm_outgroup/100,
+           patriotic_outgroup = (patriotic_outgroup-1)/4,
+           intelligent_outgroup = (intelligent_outgroup-1)/4,
+           honest_outgroup = (honest_outgroup-1)/4,
+           openminded_outgroup = (openminded_outgroup-1)/4,
+           generous_outgroup = (generous_outgroup -1)/4,
+           reversehypout =(reversehypout-1)/4,
+           reverseselfout = (reverseselfout-1)/4,
+           reversemeanout =(reversemeanout-1)/4,
+           trust_outgroup = (trust_outgroup-1)/4,
+           friends_outgroup =(friends_outgroup-1)/3,
+           neighbors_outgroup = (neighbors_outgroup-1)/3,
+           reversemarout =(reversemarout-1)/3)
+         
+#calculating the total outgroup feeling score  
+df <- df %>%
+  mutate(outgroup_total = feelingtherm_outgroup + patriotic_outgroup +
+             intelligent_outgroup + honest_outgroup + openminded_outgroup +
+             generous_outgroup + reversehypout + reverseselfout + 
+             reversemeanout + reversemarout + trust_outgroup + friends_outgroup +
+             neighbors_outgroup,
+         
+            outgroup_total = scales::rescale(outgroup_total))
+
+#creating the measure of ingroup bias
+df <- df %>% 
+  #reversing these measures so that a 5 corresponds to the most positive view of
+  #the group and a 1 corresponds to the most negative view
+  mutate(reversehypin = 6 - hypocritical_ingroup,
+         reverseselfin = 6 - selfish_ingroup,
+         reversemeanin = 6 - mean_ingroup,
+         reversemarin = 5 - marry_ingroup)
+
+df <- df %>%
+   #standardizing the ingroup feeling scores to be on a 0 to 1 scale
+   mutate(feelingtherm_ingroup = feelingtherm_ingroup/100,
+           patriotic_ingroup = (patriotic_ingroup-1)/4,
+           intelligent_ingroup = (intelligent_ingroup-1)/4,
+           honest_ingroup = (honest_ingroup-1)/4,
+           openminded_ingroup = (openminded_ingroup-1)/4,
+           generous_ingroup = (generous_ingroup -1)/4,
+           reversehypin =(reversehypin-1)/4,
+           reverseselfin = (reverseselfin-1)/4,
+           reversemeanin =(reversemeanin-1)/4,
+           trust_ingroup = (trust_ingroup-1)/4,
+           friends_ingroup =(friends_ingroup-1)/3,
+           neighbors_ingroup = (neighbors_ingroup-1)/3,
+           reversemarin =(reversemarin-1)/3)
+
+#calculating the total ingroup feeling score
+df <- df%>%
+  mutate(ingroup_total = feelingtherm_ingroup + patriotic_ingroup +
+             intelligent_ingroup + honest_ingroup + openminded_ingroup +
+             generous_ingroup + reversehypin + reverseselfin + 
+             reversemeanin + reversemarin + trust_ingroup + friends_ingroup +
+             neighbors_ingroup,
+         
+            ingroup_total = scales::rescale(ingroup_total))
+
+#calculating the total affective polarization score for each respondent
+df <- df %>%
+  mutate(aff_pol = ingroup_total - outgroup_total)
+
+#placing the affective polarization scores on a 0 to 1 scale
+df$aff_pol <- scales::rescale(df$aff_pol)
+
+#creating the political knowledge variable based on the number of political 
+#knowledge questions answered on the survey
+df <- df %>%
+  mutate_at(c(20:24), ~replace(., is.na(.), 0))
+
+df <- df %>%
+  mutate(q1 = ifelse(p_knowledge_veto == 4,1,0),
+         q2 = ifelse(p_knowledge_hofr == 1,1,0),
+         q3 = ifelse(p_knowledge_constitution == 3,1,0),
+         q4 = ifelse(p_knowledge_vp == 3,1,0),
+         q5 = ifelse(p_knowledge_conservative == 2,1,0),
+         
+         knowledge = q1+q2+q3+q4+q5)
+
+#creating religion dummy variables
+df <- df %>%
+  mutate(protestant = ifelse(religion == 1,1,0),
+         catholic = ifelse(religion == 2,1,0),
+         jewish = ifelse(religion ==3,1,0),
+         other = ifelse(religion == 4 | religion ==5 | religion ==6,1,0),
+         no_reli = ifelse(religion == 7,1,0))
+
+#creating a white dummy variable
+df <- df %>%
+  mutate(white  = ifelse(race == 1,1,0))
+
+#creating a female dummy variable
+df <- df %>%
+  mutate(female = ifelse(gender == 2,1,
+                         ifelse(gender == 1| gender == 3 | gender == 4,0,NA)))
+
+#creating a party id variable with only three categories, Democrat, Republican,
+#and Independent
+df <- df %>%
+  mutate(pid = ifelse(wave1pid == 1 | wave1pid == 2 | wave1pid == 3, "Democrat",
+                      ifelse(wave1pid == 5 | wave1pid == 6 | wave1pid == 7, "Republican",
+                             ifelse(wave1pid == 4, "Independent", NA))))
+
+#creating conservatism measure based on responses to the policy position 
+#questions
+pol_meas <- df %>%
+  select(soc_sec_spending, healthcare, services_spending, gov_role,
+         abortion, homosexual_protection, mmigration, trans_protection) %>%
+  na.omit() %>%
+  prcomp(scale. = TRUE, center = TRUE)
+summary(pol_meas)
+
+df <- df%>%
+  filter(!is.na(soc_sec_spending) & !is.na(healthcare) &!is.na(services_spending)&
+           !is.na(gov_role) & !is.na(abortion) & !is.na(homosexual_protection) &
+           !is.na(mmigration) & !is.na(trans_protection)) %>%
+  mutate(conservatism = scales::rescale(-pol_meas$x[ ,1]))
+
+#subsetting the data to include only true partisans, since Independents do not
+#have a direct outgroup
+partisan_data <- df %>%
+  filter(pid == "Republican" | pid == "Democrat") %>%
+  #only including respondents that answered all of the affective polarization questions
+  filter(!is.na(aff_pol))
+
+#creating a Republican dummy variable
+partisan_data <- partisan_data %>%
+  mutate(republican = ifelse(pid == "Republican", 1,0))
+
+#Data Visualizations
+
+#plotting the distributions of all of the norms being measured
+methods_plot <- ggplot(partisan_data, aes(x = methods)) + 
+  geom_histogram(binwidth = 1)+
+  geom_vline(aes(xintercept = mean(methods, na.rm = TRUE)), col = "red") +
+  xlab("Methods Support") +
+  ggtitle("Distribution of Methods Norm Support") + 
+  theme(plot.title = element_text(size = 10))
+
+checks_plot <- ggplot(partisan_data, aes(x = checks)) + geom_histogram(binwidth = 1)+
+  geom_vline(aes(xintercept = mean(checks, na.rm = TRUE)), col = "red") +
+  xlab("Checks Support") +
+  ggtitle("Distribution of Checks and Balances Norm Support") +
+  theme(plot.title = element_text(size = 10))
+
+exec_power_plot <- ggplot(partisan_data, aes(x = exec_power)) + 
+  geom_histogram(binwidth = 1)+
+  geom_vline(aes(xintercept = mean(exec_power, na.rm = TRUE)), col = "red") +
+  xlab("Executive Power Support") +
+  ggtitle("Distribution of Executive Power Norm Support") +
+  theme(plot.title = element_text(size = 10))
+
+institu_respect_plot <- ggplot(partisan_data, aes(x = institu_respect)) + 
+  geom_histogram(binwidth = 1)+
+  geom_vline(aes(xintercept = mean(institu_respect, na.rm = TRUE)), col = "red") +
+  xlab("Respect for Institutions Support") +
+  ggtitle("Distribution of Respect for Institutions Norm Support") +
+  theme(plot.title = element_text(size = 10))
+
+vote_plot <- ggplot(partisan_data, aes(x = vote)) + geom_histogram(binwidth = 1)+
+  geom_vline(aes(xintercept = mean(vote, na.rm = TRUE)), col = "red") +
+  xlab("Misinformed Vote Support") +
+  ggtitle("Distribution of Misinformed Vote Norm Support") +
+  theme(plot.title = element_text(size = 10))
+
+political_voice_plot <- ggplot(partisan_data, aes(x = political_voice)) + 
+  geom_histogram(binwidth = 1)+
+  geom_vline(aes(xintercept = mean(political_voice, na.rm = TRUE)), col = "red") +
+  xlab("Political Voice Support") +
+  ggtitle("Distribution of Political Voice Norm Support") +
+  theme(plot.title = element_text(size = 10))
+
+inherent_unequal_plot <- ggplot(partisan_data, aes(x = inherent_unequal)) + 
+  geom_histogram(binwidth = 1)+
+  geom_vline(aes(xintercept = mean(inherent_unequal, na.rm = TRUE)), col = "red") +
+  xlab("Political Equality Support") +
+  ggtitle("Distribution of Political Equality Norm Support") +
+  theme(plot.title = element_text(size = 10))
+
+protest_plot <- ggplot(partisan_data, aes(x = protest)) + 
+  geom_histogram(binwidth = 1)+
+  geom_vline(aes(xintercept = mean(protest, na.rm = TRUE)), col = "red") +
+  xlab("Protest Support") +
+  ggtitle("Distribution of Protest Norm Support") +
+  theme(plot.title = element_text(size = 10))
+  
+
+pdf(file = "norms.pdf",
+    width = 8.45,
+    height = 10.95)
+ggarrange(methods_plot, checks_plot, exec_power_plot, institu_respect_plot,
+          vote_plot, political_voice_plot, protest_plot, inherent_unequal_plot,
+          nrow = 4, ncol = 2)
+
+#plotting the distribution of the affective polarization scores
+plot(density(partisan_data$aff_pol))
+abline(v = mean(partisan_data$aff_pol, na.rm = TRUE), col = "red")
+
+#Regression Models for Recreating Table
+
+methods_mod <- lm(methods ~ republican + aff_pol + republican*aff_pol + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = partisan_data)
+summary(methods_mod)
+
+checks_mod <- lm(checks ~ republican + aff_pol + republican*aff_pol + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = partisan_data)
+summary(checks_mod)
+
+exec_power_mod <- lm(exec_power ~ republican + aff_pol + republican*aff_pol + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = partisan_data)
+summary(exec_power_mod)
+
+institu_respect_mod <- lm(institu_respect ~ republican + aff_pol + 
+                            republican*aff_pol + knowledge + conservatism + 
+                            education + white + female + protestant + catholic + 
+                            jewish + no_reli, data = partisan_data)
+summary(institu_respect_mod)
+
+vote_mod <- lm(vote ~ republican + republican + aff_pol + republican*aff_pol + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = partisan_data)
+summary(vote_mod)
+
+political_voice_mod <- lm(political_voice ~ republican + aff_pol + 
+                            republican*aff_pol +knowledge + conservatism + 
+                            education + white + female + protestant + catholic +
+                            jewish + no_reli, data = partisan_data)
+summary(political_voice_mod)
+
+inherent_unequal_mod <- lm(inherent_unequal ~ republican + aff_pol + 
+                             republican*aff_pol + knowledge + conservatism + 
+                             education + white + female + protestant + catholic +
+                             jewish + no_reli, data = partisan_data)
+summary(inherent_unequal_mod)
+
+protest_mod <- lm(protest ~ republican + aff_pol + republican*aff_pol + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = partisan_data)
+summary(protest_mod)
+
+#recreating the table from the paper
+stargazer(methods_mod, checks_mod, exec_power_mod, institu_respect_mod,
+         vote_mod, political_voice_mod, inherent_unequal_mod, protest_mod,
+         type = "html",
+         dep.var.labels = c("Get things done", "Checks and balances",
+                           "Exec. power", "Respect for institutions",
+                           "Misinformed vote", "Opponents get voice",
+                           "Political Equality", "Prevent protest"),
+         covariate.labels = c("Republican", "Affective Polarization", 
+                              "Political Knowledge", "Conservatism",
+                              "Education", "Non-Hispanic White",
+                              "Female", "Religion: Protestant", 
+                              "Religion: Catholic", "Religion: Jewish",
+                              "Religion: none", 
+                              "Republican * Affective Polarization"),
+         report = ("vcsp*"),
+         out = "table1rep.htm")
+
+
+#Recreating the First Robustness Test
+#adding a political knowledge*republican*affective polarization interaction term
+#to each model
+methods_mod2 <- lm(methods ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol*knowledge, 
+                   data = partisan_data)
+summary(methods_mod2)
+
+checks_mod2 <- lm(checks ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol*knowledge,
+                  data = partisan_data)
+summary(checks_mod2)
+
+exec_power_mod2 <- lm(exec_power ~ republican + aff_pol + knowledge + 
+                        conservatism + education + white + female + protestant +
+                        catholic + jewish + no_reli + republican*aff_pol*knowledge, 
+                    data = partisan_data)
+summary(exec_power_mod2)
+
+institu_respect_mod2 <- lm(institu_respect ~ republican + aff_pol + knowledge + 
+                             conservatism + education + white + female + 
+                             protestant + catholic + jewish + no_reli + 
+                             republican*aff_pol*knowledge, data = partisan_data)
+summary(institu_respect_mod2)
+
+vote_mod2 <- lm(vote ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol*knowledge, 
+               data = partisan_data)
+summary(vote_mod2)
+
+political_voice_mod2 <- lm(political_voice ~ republican + aff_pol + knowledge + 
+                            conservatism + education + white + female + 
+                            protestant + catholic + jewish + no_reli + 
+                            republican*aff_pol*knowledge, data = partisan_data)
+summary(political_voice_mod2)
+
+inherent_unequal_mod2 <- lm(inherent_unequal ~ republican + aff_pol + knowledge +
+                              conservatism + education + white + female + 
+                              protestant + catholic + jewish + no_reli + 
+                              republican*aff_pol*knowledge, data = partisan_data)
+summary(inherent_unequal_mod2)
+
+protest_mod2 <- lm(protest ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol*knowledge, 
+                  data = partisan_data)
+summary(protest_mod2)
+
+#recreating the panel of graphs for the robustness test
+method_fig <- partisan_data %>%
+  filter(!is.na(republican) & !is.na(aff_pol) & !is.na(knowledge) & 
+                !is.na(conservatism) & !is.na(education) & !is.na(white) &
+                    !is.na(female) & !is.na(protestant) & !is.na(catholic) &
+           !is.na(jewish) & !is.na(no_reli)) %>%
+  filter(knowledge == 1 | knowledge == 3 | knowledge == 5) %>%
+  mutate(preds = methods_mod2$coefficients[1] + 
+           republican *methods_mod2$coefficients[2] + 
+           aff_pol * methods_mod2$coefficients[3] + 
+           knowledge * methods_mod2$coefficients[4] +
+           median(conservatism) * methods_mod2$coefficients[5] +
+           median(education) * methods_mod2$coefficients[6] +
+           median(white) * methods_mod2$coefficients[7] +
+           median(female) * methods_mod2$coefficients[8] + 
+           median(protestant) * methods_mod2$coefficients[9] +
+           median(catholic) * methods_mod2$coefficients[10] +
+           median(jewish) * methods_mod2$coefficients[11] +
+           median(no_reli) * methods_mod2$coefficients[12] +
+           republican*aff_pol*methods_mod2$coefficients[13] +
+           republican * knowledge*methods_mod2$coefficients[14] +
+           aff_pol*knowledge*methods_mod2$coefficients[15] + 
+           republican * aff_pol*knowledge*methods_mod2$coefficients[16]) %>%
+  ggplot(aes(x = aff_pol,
+             y = preds,
+             color = as.factor(republican),
+             lty = as.factor(knowledge))) +
+  geom_smooth(method = "lm",
+              se = FALSE) + 
+  ggtitle("Get Things Done")+
+  labs(x = "Affective Polarization", 
+       y = "Support for Democratic Norm",
+       col = "Partisan Identification",
+       linetype = "Political Knowledge") + 
+  scale_x_continuous(limits = c(0,1), 
+                     labels = c("Low",
+                                "High"),
+                     breaks = c(0,1)) + 
+  scale_linetype_manual(values = c("dotted", "dashed", "solid"),
+                        labels = c("Low", "Medium", "High")) +
+  scale_colour_grey(breaks = c(0,1),
+                    labels = c("Democrats", "Republicans"),
+                    start = .1, end = .6)
+
+checks_fig <- partisan_data %>%
+  filter(!is.na(republican) & !is.na(aff_pol) & !is.na(knowledge) & 
+                !is.na(conservatism) & !is.na(education) & !is.na(white) &
+                    !is.na(female) & !is.na(protestant) & !is.na(catholic) &
+           !is.na(jewish) & !is.na(no_reli)) %>%
+  filter(knowledge == 1 | knowledge == 3 | knowledge == 5) %>%
+  mutate(preds = checks_mod2$coefficients[1] + 
+           republican *checks_mod2$coefficients[2] + 
+           aff_pol * checks_mod2$coefficients[3] + 
+           knowledge * checks_mod2$coefficients[4] +
+           median(conservatism) * checks_mod2$coefficients[5] +
+           median(education) * checks_mod2$coefficients[6] +
+           median(white) * checks_mod2$coefficients[7] +
+           median(female) * checks_mod2$coefficients[8] + 
+           median(protestant) * checks_mod2$coefficients[9] +
+           median(catholic) * checks_mod2$coefficients[10] +
+           median(jewish) * checks_mod2$coefficients[11] +
+           median(no_reli) * checks_mod2$coefficients[12] +
+           republican*aff_pol*checks_mod2$coefficients[13] +
+           republican * knowledge*checks_mod2$coefficients[14] +
+           aff_pol*knowledge*checks_mod2$coefficients[15] + 
+           republican * aff_pol*knowledge*checks_mod2$coefficients[16]) %>%
+  ggplot(aes(x = aff_pol,
+             y = preds,
+             color = as.factor(republican),
+             lty = as.factor(knowledge))) +
+  geom_smooth(method = "lm",
+              se = FALSE) + 
+  ggtitle("Checks and Balances")+
+  labs(x = "Affective Polarization", 
+       y = "Support for Democratic Norm",
+       col = "Partisan Identification",
+       linetype = "Political Knowledge") + 
+  scale_x_continuous(limits = c(0,1), 
+                     labels = c("Low",
+                                "High"),
+                     breaks = c(0,1)) + 
+  scale_linetype_manual(values = c("dotted", "dashed", "solid"),
+                        labels = c("Low", "Medium", "High")) +
+  scale_colour_grey(breaks = c(0,1),
+                    labels = c("Democrats", "Republicans"),
+                    start = .1, end = .6)
+
+exec_power_fig <- partisan_data %>%
+  filter(!is.na(republican) & !is.na(aff_pol) & !is.na(knowledge) & 
+                !is.na(conservatism) & !is.na(education) & !is.na(white) &
+                    !is.na(female) & !is.na(protestant) & !is.na(catholic) &
+           !is.na(jewish) & !is.na(no_reli)) %>%
+  filter(knowledge == 1 | knowledge == 3 | knowledge == 5) %>%
+  mutate(preds = exec_power_mod2$coefficients[1] + 
+           republican *exec_power_mod2$coefficients[2] + 
+           aff_pol * exec_power_mod2$coefficients[3] + 
+           knowledge * exec_power_mod2$coefficients[4] +
+           median(conservatism) * exec_power_mod2$coefficients[5] +
+           median(education) * exec_power_mod2$coefficients[6] +
+           median(white) * exec_power_mod2$coefficients[7] +
+           median(female) * exec_power_mod2$coefficients[8] + 
+           median(protestant) * exec_power_mod2$coefficients[9] +
+           median(catholic) * exec_power_mod2$coefficients[10] +
+           median(jewish) * exec_power_mod2$coefficients[11] +
+           median(no_reli) * exec_power_mod2$coefficients[12] +
+           republican*aff_pol*exec_power_mod2$coefficients[13] +
+           republican * knowledge*exec_power_mod2$coefficients[14] +
+           aff_pol*knowledge*exec_power_mod2$coefficients[15] + 
+           republican * aff_pol*knowledge*exec_power_mod2$coefficients[16]) %>%
+  ggplot(aes(x = aff_pol,
+             y = preds,
+             color = as.factor(republican),
+             lty = as.factor(knowledge))) +
+  geom_smooth(method = "lm",
+              se = FALSE) + 
+  ggtitle("Executive Power") +
+  labs(x = "Affective Polarization", 
+       y = "Support for Democratic Norm",
+       col = "Partisan Identification",
+       linetype = "Political Knowledge") + 
+  scale_x_continuous(limits = c(0,1), 
+                     labels = c("Low",
+                                "High"),
+                     breaks = c(0,1)) + 
+  scale_linetype_manual(values = c("dotted", "dashed", "solid"),
+                        labels = c("Low", "Medium", "High")) +
+  scale_colour_grey(breaks = c(0,1),
+                    labels = c("Democrats", "Republicans"),
+                    start = .1, end = .6)
+
+institu_respect_fig <- partisan_data %>%
+  filter(!is.na(republican) & !is.na(aff_pol) & !is.na(knowledge) & 
+                !is.na(conservatism) & !is.na(education) & !is.na(white) &
+                    !is.na(female) & !is.na(protestant) & !is.na(catholic) &
+           !is.na(jewish) & !is.na(no_reli)) %>%
+  filter(knowledge == 1 | knowledge == 3 | knowledge == 5) %>%
+  mutate(preds = institu_respect_mod2$coefficients[1] + 
+           republican *institu_respect_mod2$coefficients[2] + 
+           aff_pol * institu_respect_mod2$coefficients[3] + 
+           knowledge * institu_respect_mod2$coefficients[4] +
+           median(conservatism) * institu_respect_mod2$coefficients[5] +
+           median(education) * institu_respect_mod2$coefficients[6] +
+           median(white) * institu_respect_mod2$coefficients[7] +
+           median(female) * institu_respect_mod2$coefficients[8] + 
+           median(protestant) * institu_respect_mod2$coefficients[9] +
+           median(catholic) * institu_respect_mod2$coefficients[10] +
+           median(jewish) * institu_respect_mod2$coefficients[11] +
+           median(no_reli) * institu_respect_mod2$coefficients[12] +
+           republican*aff_pol*institu_respect_mod2$coefficients[13] +
+           republican * knowledge*institu_respect_mod2$coefficients[14] +
+           aff_pol*knowledge*institu_respect_mod2$coefficients[15] + 
+           republican * aff_pol*knowledge*institu_respect_mod2$coefficients[16]) %>%
+  ggplot(aes(x = aff_pol,
+             y = preds,
+             color = as.factor(republican),
+             lty = as.factor(knowledge))) +
+  geom_smooth(method = "lm",
+              se = FALSE) + 
+  ggtitle("Respect for Institutions")+
+  labs(x = "Affective Polarization", 
+       y = "Support for Democratic Norm",
+       col = "Partisan Identification",
+       linetype = "Political Knowledge") + 
+  scale_x_continuous(limits = c(0,1), 
+                     labels = c("Low",
+                                "High"),
+                     breaks = c(0,1)) + 
+  scale_linetype_manual(values = c("dotted", "dashed", "solid"),
+                        labels = c("Low", "Medium", "High")) +
+  scale_colour_grey(breaks = c(0,1),
+                    labels = c("Democrats", "Republicans"),
+                    start = .1, end = .6)
+
+vote_fig <- partisan_data %>%
+  filter(!is.na(republican) & !is.na(aff_pol) & !is.na(knowledge) & 
+                !is.na(conservatism) & !is.na(education) & !is.na(white) &
+                    !is.na(female) & !is.na(protestant) & !is.na(catholic) &
+           !is.na(jewish) & !is.na(no_reli)) %>%
+  filter(knowledge == 1 | knowledge == 3 | knowledge == 5) %>%
+  mutate(preds = vote_mod2$coefficients[1] + 
+           republican *vote_mod2$coefficients[2] + 
+           aff_pol * vote_mod2$coefficients[3] + 
+           knowledge * vote_mod2$coefficients[4] +
+           median(conservatism) * vote_mod2$coefficients[5] +
+           median(education) * vote_mod2$coefficients[6] +
+           median(white) * vote_mod2$coefficients[7] +
+           median(female) * vote_mod2$coefficients[8] + 
+           median(protestant) * vote_mod2$coefficients[9] +
+           median(catholic) * vote_mod2$coefficients[10] +
+           median(jewish) * vote_mod2$coefficients[11] +
+           median(no_reli) * vote_mod2$coefficients[12] +
+           republican*aff_pol*vote_mod2$coefficients[13] +
+           republican * knowledge*vote_mod2$coefficients[14] +
+           aff_pol*knowledge*vote_mod2$coefficients[15] + 
+           republican * aff_pol*knowledge*vote_mod2$coefficients[16]) %>%
+  ggplot(aes(x = aff_pol,
+             y = preds,
+             color = as.factor(republican),
+             lty = as.factor(knowledge))) +
+  geom_smooth(method = "lm",
+              se = FALSE) + 
+  ggtitle("Misinformed Vote")+
+  labs(x = "Affective Polarization", 
+       y = "Support for Democratic Norm",
+       col = "Partisan Identification",
+       linetype = "Political Knowledge") + 
+  scale_x_continuous(limits = c(0,1), 
+                     labels = c("Low",
+                                "High"),
+                     breaks = c(0,1)) + 
+  scale_linetype_manual(values = c("dotted", "dashed", "solid"),
+                        labels = c("Low", "Medium", "High")) +
+  scale_colour_grey(breaks = c(0,1),
+                    labels = c("Democrats", "Republicans"),
+                    start = .1, end = .6)
+
+political_voice_fig <- partisan_data %>%
+  filter(!is.na(republican) & !is.na(aff_pol) & !is.na(knowledge) & 
+                !is.na(conservatism) & !is.na(education) & !is.na(white) &
+                    !is.na(female) & !is.na(protestant) & !is.na(catholic) &
+           !is.na(jewish) & !is.na(no_reli)) %>%
+  filter(knowledge == 1 | knowledge == 3 | knowledge == 5) %>%
+  mutate(preds = political_voice_mod2$coefficients[1] + 
+           republican *political_voice_mod2$coefficients[2] + 
+           aff_pol * political_voice_mod2$coefficients[3] + 
+           knowledge * political_voice_mod2$coefficients[4] +
+           median(conservatism) * political_voice_mod2$coefficients[5] +
+           median(education) * political_voice_mod2$coefficients[6] +
+           median(white) * political_voice_mod2$coefficients[7] +
+           median(female) * political_voice_mod2$coefficients[8] + 
+           median(protestant) * political_voice_mod2$coefficients[9] +
+           median(catholic) * political_voice_mod2$coefficients[10] +
+           median(jewish) * political_voice_mod2$coefficients[11] +
+           median(no_reli) * political_voice_mod2$coefficients[12] +
+           republican*aff_pol*political_voice_mod2$coefficients[13] +
+           republican * knowledge*political_voice_mod2$coefficients[14] +
+           aff_pol*knowledge*political_voice_mod2$coefficients[15] + 
+           republican * aff_pol*knowledge*political_voice_mod2$coefficients[16]) %>%
+  ggplot(aes(x = aff_pol,
+             y = preds,
+             color = as.factor(republican),
+             lty = as.factor(knowledge))) +
+  geom_smooth(method = "lm",
+              se = FALSE) + 
+  ggtitle("Opponents Get Voice")+
+  labs(x = "Affective Polarization", 
+       y = "Support for Democratic Norm",
+       col = "Partisan Identification",
+       linetype = "Political Knowledge") + 
+  scale_x_continuous(limits = c(0,1), 
+                     labels = c("Low",
+                                "High"),
+                     breaks = c(0,1)) + 
+  scale_linetype_manual(values = c("dotted", "dashed", "solid"),
+                        labels = c("Low", "Medium", "High")) +
+  scale_colour_grey(breaks = c(0,1),
+                    labels = c("Democrats", "Republicans"),
+                    start = .1, end = .6)
+
+inherent_unequal_fig <- partisan_data %>%
+  filter(!is.na(republican) & !is.na(aff_pol) & !is.na(knowledge) & 
+                !is.na(conservatism) & !is.na(education) & !is.na(white) &
+                    !is.na(female) & !is.na(protestant) & !is.na(catholic) &
+           !is.na(jewish) & !is.na(no_reli)) %>%
+  filter(knowledge == 1 | knowledge == 3 | knowledge == 5) %>%
+  mutate(preds = inherent_unequal_mod2$coefficients[1] + 
+           republican *inherent_unequal_mod2$coefficients[2] + 
+           aff_pol * inherent_unequal_mod2$coefficients[3] + 
+           knowledge * inherent_unequal_mod2$coefficients[4] +
+           median(conservatism) * inherent_unequal_mod2$coefficients[5] +
+           median(education) * inherent_unequal_mod2$coefficients[6] +
+           median(white) * inherent_unequal_mod2$coefficients[7] +
+           median(female) * inherent_unequal_mod2$coefficients[8] + 
+           median(protestant) * inherent_unequal_mod2$coefficients[9] +
+           median(catholic) * inherent_unequal_mod2$coefficients[10] +
+           median(jewish) * inherent_unequal_mod2$coefficients[11] +
+           median(no_reli) * inherent_unequal_mod2$coefficients[12] +
+           republican*aff_pol*inherent_unequal_mod2$coefficients[13] +
+           republican * knowledge*inherent_unequal_mod2$coefficients[14] +
+           aff_pol*knowledge*inherent_unequal_mod2$coefficients[15] + 
+           republican * aff_pol*knowledge*inherent_unequal_mod2$coefficients[16]) %>%
+  ggplot(aes(x = aff_pol,
+             y = preds,
+             color = as.factor(republican),
+             lty = as.factor(knowledge))) +
+  geom_smooth(method = "lm",
+              se = FALSE) + 
+  ggtitle("Political Equality")+
+  labs(x = "Affective Polarization", 
+       y = "Support for Democratic Norm",
+       col = "Partisan Identification",
+       linetype = "Political Knowledge") + 
+  scale_x_continuous(limits = c(0,1), 
+                     labels = c("Low",
+                                "High"),
+                     breaks = c(0,1)) + 
+  scale_linetype_manual(values = c("dotted", "dashed", "solid"),
+                        labels = c("Low", "Medium", "High")) +
+  scale_colour_grey(breaks = c(0,1),
+                    labels = c("Democrats", "Republicans"),
+                    start = .1, end = .6)
+
+protest_fig <- partisan_data %>%
+  filter(!is.na(republican) & !is.na(aff_pol) & !is.na(knowledge) & 
+                !is.na(conservatism) & !is.na(education) & !is.na(white) &
+                    !is.na(female) & !is.na(protestant) & !is.na(catholic) &
+           !is.na(jewish) & !is.na(no_reli)) %>%
+  filter(knowledge == 1 | knowledge == 3 | knowledge == 5) %>%
+  mutate(preds = protest_mod2$coefficients[1] + 
+           republican *protest_mod2$coefficients[2] + 
+           aff_pol * protest_mod2$coefficients[3] + 
+           knowledge * protest_mod2$coefficients[4] +
+           median(conservatism) * protest_mod2$coefficients[5] +
+           median(education) * protest_mod2$coefficients[6] +
+           median(white) * protest_mod2$coefficients[7] +
+           median(female) * protest_mod2$coefficients[8] + 
+           median(protestant) * protest_mod2$coefficients[9] +
+           median(catholic) * protest_mod2$coefficients[10] +
+           median(jewish) * protest_mod2$coefficients[11] +
+           median(no_reli) * protest_mod2$coefficients[12] +
+           republican*aff_pol*protest_mod2$coefficients[13] +
+           republican * knowledge*protest_mod2$coefficients[14] +
+           aff_pol*knowledge*protest_mod2$coefficients[15] + 
+           republican * aff_pol*knowledge*protest_mod2$coefficients[16]) %>%
+  ggplot(aes(x = aff_pol,
+             y = preds,
+             color = as.factor(republican),
+             lty = as.factor(knowledge))) +
+  geom_smooth(method = "lm",
+              se = FALSE) + 
+  ggtitle("Prevent Protest")+
+  labs(x = "Affective Polarization", 
+       y = "Support for Democratic Norm",
+       col = "Partisan Identification",
+       linetype = "Political Knowledge") + 
+  scale_x_continuous(limits = c(0,1), 
+                     labels = c("Low",
+                                "High"),
+                     breaks = c(0,1)) + 
+  scale_linetype_manual(values = c("dotted", "dashed", "solid"),
+                        labels = c("Low", "Medium", "High")) +
+  scale_colour_grey(breaks = c(0,1),
+                    labels = c("Democrats", "Republicans"),
+                    start = .1, end = .6)
+
+#combining all of the figures into one image
+pdf(file = "figure1rec.pdf",
+    width = 8.45,
+    height = 10.95)
+
+ggarrange(method_fig, checks_fig, exec_power_fig, institu_respect_fig,
+         vote_fig, political_voice_fig, inherent_unequal_fig, protest_fig,
+         nrow = 4, ncol = 2, common.legend = TRUE, legend = "bottom")
+
+#Evaluation 1 - Testing Sensitivity to Data
+df2 <- df
+
+#removing leaning independents from the partisan data subset
+df2 <- df2 %>%
+  mutate(pid = ifelse(wave1pid == 3 | wave1pid == 5, "Independent", pid))
+
+partisan_data2 <- df2 %>%
+  filter(pid == "Republican" | pid == "Democrat") %>%
+  #only including respondents that answered all of the affective polarization questions
+  filter(!is.na(aff_pol))
+
+#creating a Republican dummy variable
+partisan_data2 <- partisan_data2 %>%
+  mutate(republican = ifelse(pid == "Republican", 1,0))
+
+#re-running the regressions from Table 1 with only self-identifying partisans
+#included
+methods_mod3 <- lm(methods ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol, data = partisan_data2)
+summary(methods_mod3)
+
+checks_mod3 <- lm(checks ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol, data = partisan_data2)
+summary(checks_mod3)
+
+exec_power_mod3 <- lm(exec_power ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol, data = partisan_data2)
+summary(exec_power_mod3)
+
+institu_respect_mod3 <- lm(institu_respect ~ republican + aff_pol + knowledge + 
+                            conservatism + education + white + female + 
+                            protestant + catholic + jewish + no_reli + 
+                            republican*aff_pol, data = partisan_data2)
+summary(institu_respect_mod3)
+
+vote_mod3 <- lm(vote ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol, data = partisan_data2)
+summary(vote_mod3)
+
+political_voice_mod3 <- lm(political_voice ~ republican + aff_pol + knowledge + 
+                            conservatism + education + white + female + 
+                            protestant + catholic + jewish + no_reli + 
+                            republican*aff_pol, data = partisan_data2)
+summary(political_voice_mod3)
+
+inherent_unequal_mod3 <- lm(inherent_unequal ~ republican + aff_pol + knowledge +
+                             conservatism + education + white + female + 
+                             protestant + catholic + jewish + no_reli + 
+                             republican*aff_pol, data = partisan_data2)
+summary(inherent_unequal_mod3)
+
+protest_mod3 <- lm(protest ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol, data = partisan_data2)
+summary(protest_mod3)
+
+#recreating the table from the paper
+stargazer(methods_mod3, checks_mod3, exec_power_mod3, institu_respect_mod3,
+         vote_mod3, political_voice_mod3, inherent_unequal_mod3, protest_mod3,
+         type = "html",
+         dep.var.labels = c("Get things done", "Checks and balances",
+                           "Exec. power", "Respect for institutions",
+                           "Misinformed vote", "Opponents get voice",
+                           "Political Equality", "Prevent protest"),
+         covariate.labels = c("Republican", "Affective Polarization",
+                              "Political Knowledge", "Conservatism",
+                              "Education", "Non-Hispanic White",
+                              "Female", "Religion: Protestant", 
+                              "Religion: Catholic", "Religion: Jewish",
+                              "Religion: none",
+                              "Republican*Affective Polarization"),
+         report = ("vcsp*"),
+         out = "table1noind.htm")
+
+#bootstrapping to further examine the differences between coefficients for the 
+#model with Independents and the model without Independents
+sim_num <- 1000
+dem_coef_boots <- matrix(NA, nrow = sim_num, ncol = 4)
+rep_coef_boots <- dem_coef_boots
+for(i in seq_len(sim_num)){
+  boot_ind <- sample(nrow(partisan_data2), nrow(partisan_data2), replace = TRUE)
+  y_boot <- partisan_data2[boot_ind, c("methods", "checks", "exec_power", 
+                                       "institu_respect")]
+  x_boot <- partisan_data2[boot_ind, c("republican", "aff_pol", "knowledge", 
+                                       "conservatism", "education",
+                                       "white", "female", "protestant",
+                                       "catholic", "jewish", "no_reli")]
+  boot_df <- data.frame(cbind(x_boot, y_boot))
+  
+  methods_mod_boot <- lm(methods ~ republican + aff_pol + knowledge +
+                             conservatism + education + white + female + 
+                             protestant + catholic + jewish + no_reli + 
+                             republican*aff_pol, data = boot_df)
+  checks_mod_boot <- lm(checks ~ republican + aff_pol + knowledge +
+                             conservatism + education + white + female + 
+                             protestant + catholic + jewish + no_reli + 
+                             republican*aff_pol, data = boot_df)
+  exec_power_mod_boot <- lm(exec_power ~ republican + aff_pol + knowledge +
+                             conservatism + education + white + female + 
+                             protestant + catholic + jewish + no_reli + 
+                             republican*aff_pol, data = boot_df)
+  institu_respect_mod_boot <- lm(institu_respect ~ republican + aff_pol + 
+                                   knowledge + conservatism + education + white + 
+                                   female + protestant + catholic + jewish + 
+                                   no_reli + republican*aff_pol, data = boot_df)
+  
+  dem_coef_boots[i, ] <- c((methods_mod_boot$coefficients[3] - methods_mod$coefficients[3]),
+                          checks_mod_boot$coefficients[3] - checks_mod$coefficients[3],
+                          exec_power_mod_boot$coefficients[3] - exec_power_mod$coefficients[3],
+                          institu_respect_mod_boot$coefficients[3] - institu_respect_mod$coefficients[3])
+  rep_coef_boots[i, ] <- c((methods_mod_boot$coefficients[13] - methods_mod$coefficients[13]),
+                          checks_mod_boot$coefficients[13] - checks_mod$coefficients[13],
+                          exec_power_mod_boot$coefficients[13] - exec_power_mod$coefficients[13],
+                          institu_respect_mod_boot$coefficients[13] - institu_respect_mod$coefficients[13])
+}
+
+dem_diffs <- matrix(NA, nrow = 2, ncol = 4)
+rep_diffs <- dem_diffs
+
+dem_diffs <- apply(dem_coef_boots, 2, quantile, c(0.025, 0.975))
+rep_diffs <- apply(rep_coef_boots, 2, quantile, c(0.025, 0.975))
+
+rownames(dem_diffs) <- c("lower bound", "upper bound")
+colnames(dem_diffs) <- c("methods", "checks", "exec_power", "institu_respect")
+rownames(rep_diffs) <- rownames(dem_diffs)
+colnames(rep_diffs) <- colnames(dem_diffs)
+
+#Evaluation 2 - Testing Sensitivity to Model Choice
+#re-running the regressions from Table 1 with an added white*Republican*affective polarization
+#interaction
+methods_mod4 <- lm(methods ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol*white,
+                   data = partisan_data)
+summary(methods_mod4)
+
+checks_mod4 <- lm(checks ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol*white,
+                   data = partisan_data)
+summary(checks_mod4)
+
+exec_power_mod4 <- lm(exec_power ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol*white,
+                   data = partisan_data)
+summary(exec_power_mod4)
+
+institu_respect_mod4 <- lm(institu_respect ~ republican + aff_pol + knowledge + 
+                             conservatism +education + white + female + 
+                             protestant + catholic + jewish + no_reli + 
+                             republican*aff_pol*white, data = partisan_data)
+summary(institu_respect_mod4)
+
+vote_mod4 <- lm(vote ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol*white,
+                   data = partisan_data)
+summary(vote_mod4)
+
+political_voice_mod4 <- lm(political_voice ~ republican + aff_pol + knowledge + 
+                             conservatism + education + white + female + 
+                             protestant + catholic + jewish + no_reli + 
+                             republican*aff_pol*white,
+                   data = partisan_data)
+summary(political_voice_mod4)
+
+inherent_unequal_mod4 <- lm(inherent_unequal ~ republican + aff_pol + knowledge + 
+                             conservatism + education + white + female + 
+                             protestant + catholic + jewish + no_reli + 
+                             republican*aff_pol*white,
+                   data = partisan_data)
+summary(inherent_unequal_mod4)
+
+protest_mod4 <- lm(protest ~ republican + aff_pol + knowledge + conservatism +
+                    education + white + female + protestant + catholic +
+                    jewish + no_reli + republican*aff_pol*white,
+                   data = partisan_data)
+summary(protest_mod4)
+
+#recreating the table from the paper
+stargazer(methods_mod4, checks_mod4, exec_power_mod4, institu_respect_mod4,
+         vote_mod4, political_voice_mod4, inherent_unequal_mod4, protest_mod4,
+         type = "html",
+         dep.var.labels = c("Get things done", "Checks and balances",
+                           "Exec. power", "Respect for institutions",
+                           "Misinformed vote", "Opponents get voice",
+                           "Political Equality", "Prevent protest"),
+         covariate.labels = c("Republican", "Affective Polarization",
+                              "Political Knowledge", "Conservatism",
+                              "Education", "Non-Hispanic White",
+                              "Female", "Religion: Protestant", 
+                              "Religion: Catholic", "Religion: Jewish",
+                              "Religion: none",
+                              "Republican*Affective Polarization",
+                              "Republican*White",
+                              "Affective Polarization*White",
+                              "Republican*Affective Polarization*White"),
+         report = ("vcsp*"),
+         out = "table1extraint.htm")
+
+#further examining the effect of race on the results by comparing predicted 
+#values
+newdata <- partisan_data
+newdata[["white"]][newdata$white != 0] <- 0
+newdata[["republican"]][newdata$republican != 1] <- 1
+nw_methods <- predict(methods_mod4, newdata)
+nw_checks <- predict(checks_mod4, newdata)
+nw_exec_power <- predict(exec_power_mod4, newdata)
+nw_institu_respect <- predict(institu_respect_mod4, newdata)
+
+newdata[["white"]][newdata$white != 1] <- 1
+w_methods <- predict(methods_mod4, newdata)
+w_checks <- predict(checks_mod4, newdata)
+w_exec_power <- predict(exec_power_mod4, newdata)
+w_institu_respect <- predict(institu_respect_mod4, newdata)
+
+race_effect <- matrix(NA, nrow = 1, ncol = 4)
+colnames(race_effect) <- c("methods", "checks", "exec_power", "institu_respect")
+race_effect[, 1] <- mean(w_methods - nw_methods, na.rm = TRUE)
+race_effect[, 2] <- mean(w_checks - nw_checks, na.rm = TRUE)
+race_effect[, 3] <- mean(w_exec_power - nw_exec_power, na.rm = TRUE)
+race_effect[, 4] <- mean(w_institu_respect - nw_institu_respect, na.rm = TRUE)
+
+#ten-fold cross validation to compare the original model and the racial interaction
+#model
+k <- 10
+folds <- sample(k, nrow(partisan_data), replace=TRUE)
+ 
+
+orig_rmse <- matrix(NA, nrow = k, ncol = 4)
+race_rmse <- orig_rmse
+for(i in seq_len(k)){
+  train <- folds != i
+  test <- !train
+  
+  train_df <- partisan_data[train, ]
+  test_df <- partisan_data[test, ]
+  
+  orig_methods_mod <- lm(methods ~ republican + aff_pol + republican*aff_pol + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = train_df)
+  orig_checks_mod <- lm(checks ~ republican + aff_pol + republican*aff_pol + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = train_df)
+  orig_exec_power_mod <- lm(exec_power ~ republican + aff_pol + republican*aff_pol + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = train_df)
+  orig_institu_respect_mod <- lm(institu_respect ~ republican + 
+                                   aff_pol + republican*aff_pol + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = train_df)
+  
+  race_methods_mod <- lm(methods ~ republican + aff_pol + republican*aff_pol*white + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = train_df)
+  race_checks_mod <- lm(checks ~ republican + aff_pol + republican*aff_pol*white + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = train_df)
+  race_exec_power_mod <- lm(exec_power ~ republican + aff_pol + 
+                              republican*aff_pol*white + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = train_df)
+  race_institu_respect_mod <- lm(institu_respect ~ republican + 
+                                   aff_pol + republican*aff_pol*white + 
+                   knowledge + conservatism + education + white + female + 
+                   protestant + catholic + jewish + no_reli, data = train_df)
+  
+  orig_methods_pred <- predict(orig_methods_mod, newdata = test_df)
+  orig_checks_pred <- predict(orig_checks_mod, newdata = test_df)
+  orig_exec_power_pred <- predict(orig_exec_power_mod, newdata = test_df)
+  orig_institu_respect_pred <- predict(orig_institu_respect_mod, newdata = test_df)
+  
+  orig_methods_err <- (test_df$methods - orig_methods_pred)
+  orig_checks_err <- (test_df$checks - orig_checks_pred)
+  orig_exec_power_err <- (test_df$exec_power - orig_exec_power_pred)
+  orig_institu_respect_err <- (test_df$institu_respect - orig_institu_respect_pred)
+  
+  race_methods_pred <- predict(race_methods_mod, newdata = test_df)
+  race_checks_pred <- predict(race_checks_mod, newdata = test_df)
+  race_exec_power_pred <- predict(race_exec_power_mod, newdata = test_df)
+  race_institu_respect_pred <- predict(race_institu_respect_mod, newdata = test_df)
+  
+  race_methods_err <- (test_df$methods - race_methods_pred)
+  race_checks_err <- (test_df$checks - race_checks_pred)
+  race_exec_power_err <- (test_df$exec_power - race_exec_power_pred)
+  race_institu_respect_err <- (test_df$institu_respect - race_institu_respect_pred)
+  
+  orig_rmse[i, 1] <- sqrt(mean(orig_methods_err^2, na.rm = TRUE))
+  orig_rmse[i, 2] <- sqrt(mean(orig_checks_err^2, na.rm = TRUE))
+  orig_rmse[i, 3] <- sqrt(mean(orig_exec_power_err^2, na.rm = TRUE))
+  orig_rmse[i, 4] <- sqrt(mean(orig_institu_respect_err^2, na.rm = TRUE))
+  
+  race_rmse[i, 1] <- sqrt(mean(race_methods_err^2, na.rm = TRUE))
+  race_rmse[i, 2] <- sqrt(mean(race_checks_err^2, na.rm = TRUE))
+  race_rmse[i, 3] <- sqrt(mean(race_exec_power_err^2, na.rm = TRUE))
+  race_rmse[i, 4] <- sqrt(mean(race_institu_respect_err^2, na.rm = TRUE))
+}
+
+mean_orig_rmse <- apply(orig_rmse, 2, mean)
+mean_race_rmse <- apply(race_rmse, 2, mean)
+
+```
+
